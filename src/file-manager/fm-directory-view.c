@@ -6421,6 +6421,66 @@ real_action_redo (FMDirectoryView *view)
 	caja_undostack_manager_redo (manager, GTK_WIDGET (view), finish_undoredo_callback);
 }
 
+static char *
+get_bulk_rename_tool (void)
+{
+	char *bulk_rename_tool;
+	g_settings_get (caja_preferences, CAJA_PREFERENCES_BULK_RENAME_TOOL, "^ay", &bulk_rename_tool);
+	return g_strstrip (bulk_rename_tool);
+}
+
+static gboolean
+have_bulk_rename_tool (void)
+{
+	char *bulk_rename_tool;
+	gboolean have_tool;
+
+	bulk_rename_tool = get_bulk_rename_tool ();
+	have_tool = ((bulk_rename_tool != NULL) && (*bulk_rename_tool != '\0'));
+	g_free (bulk_rename_tool);
+	return have_tool;
+}
+
+static void
+invoke_external_bulk_rename_utility (FMDirectoryView *view,
+                                     GList           *selection)
+{
+    GString *cmd;
+    char *parameter;
+    char *quoted_parameter;
+    char *bulk_rename_tool;
+    GList *walk;
+    CajaFile *file;
+
+    /* assemble command line */
+    bulk_rename_tool = get_bulk_rename_tool ();
+    cmd = g_string_new (bulk_rename_tool);
+    g_free (bulk_rename_tool);
+    for (walk = selection; walk; walk = walk->next) {
+        file = walk->data;
+        parameter = caja_file_get_uri (file);
+        quoted_parameter = g_shell_quote (parameter);
+        g_free (parameter);
+        cmd = g_string_append (cmd, " ");
+        cmd = g_string_append (cmd, quoted_parameter);
+        g_free (quoted_parameter);
+    }
+
+        guint i = 0;
+
+    // Escape percents
+    for (i = 0; i < strlen(cmd->str); i++) {
+        if (cmd->str[i] == '%') {
+            g_string_insert_c(cmd, i++, '%');
+        }
+    }
+
+    /* spawning and error handling */
+    caja_launch_application_from_command (gtk_widget_get_screen (GTK_WIDGET (view)),
+                                          cmd->str, cmd->str, FALSE, NULL);
+    g_string_free (cmd, TRUE);
+}
+
 static void
 real_action_rename (FMDirectoryView *view,
 		    gboolean select_all)
@@ -6432,16 +6492,21 @@ real_action_rename (FMDirectoryView *view,
 	selection = fm_directory_view_get_selection (view);
 
 	if (selection_not_empty_in_menu_callback (view, selection)) {
-		CajaFile *file;
-
-		file = CAJA_FILE (selection->data);
-
-		if (!select_all) {
+		/* If there is more than one file selected, invoke a batch renamer */
+		if (selection->next != NULL) {
+			if (have_bulk_rename_tool ()) {
+				invoke_external_bulk_rename_utility (view, selection);
+			}
+		} else {
+			CajaFile *file;
+			file = CAJA_FILE (selection->data);
+			if (!select_all) {
 			/* directories don't have a file extension, so
 			 * they are always pre-selected as a whole */
-			select_all = caja_file_is_directory (file);
+				select_all = caja_file_is_directory (file);
+			}
+			EEL_CALL_METHOD (FM_DIRECTORY_VIEW_CLASS, view, start_renaming_file, (view, file, select_all));
 		}
-		EEL_CALL_METHOD (FM_DIRECTORY_VIEW_CLASS, view, start_renaming_file, (view, file, select_all));
 	}
 
 	caja_file_list_free (selection);
@@ -8915,9 +8980,16 @@ real_update_menus (FMDirectoryView *view)
 	G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
 	action = gtk_action_group_get_action (view->details->dir_action_group,
 					      FM_ACTION_RENAME);
-	gtk_action_set_sensitive (action,
-				  selection_count == 1 &&
-				  fm_directory_view_can_rename_file (view, selection->data));
+
+    /* rename sensitivity depending on selection */
+    if (selection_count > 1) {
+        /* If multiple files are selected, sensitivity depends on whether a bulk renamer is registered. */
+        gtk_action_set_sensitive (action, have_bulk_rename_tool ());
+    } else {
+        gtk_action_set_sensitive (action,
+                      selection_count == 1 &&
+                      fm_directory_view_can_rename_file (view, selection->data));
+    }
 
 	action = gtk_action_group_get_action (view->details->dir_action_group,
 					      FM_ACTION_NEW_FOLDER);
