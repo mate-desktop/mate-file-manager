@@ -77,6 +77,8 @@
 /* int enums */
 #define CAJA_FILE_MANAGEMENT_PROPERTIES_THUMBNAIL_LIMIT_WIDGET "preview_image_size_combobox"
 
+#define CAJA_FILE_MANAGEMENT_PROPERTIES_BULK_RENAME_WIDGET "bulk_rename_entry"
+
 static const char * const default_view_values[] =
 {
     "icon-view",
@@ -939,6 +941,17 @@ bind_builder_bool_inverted (GtkBuilder *builder,
                       "active", G_SETTINGS_BIND_INVERT_BOOLEAN);
 }
 
+static void
+bind_builder_string_entry (GtkBuilder *builder,
+                            GSettings *settings,
+                           const char *widget_name,
+                           const char *prefs)
+{
+    g_settings_bind (settings, prefs,
+                     gtk_builder_get_object (builder, widget_name),
+                     "text", G_SETTINGS_BIND_DEFAULT);
+}
+
 static gboolean
 enum_get_mapping (GValue             *value,
                   GVariant           *variant,
@@ -1136,6 +1149,9 @@ caja_file_management_properties_dialog_setup (GtkBuilder *builder, GtkWindow *wi
     bind_builder_bool (builder, caja_preferences,
                        CAJA_FILE_MANAGEMENT_PROPERTIES_TRASH_DELETE_WIDGET,
                        CAJA_PREFERENCES_ENABLE_DELETE);
+    bind_builder_string_entry (builder, caja_preferences,
+                         CAJA_FILE_MANAGEMENT_PROPERTIES_BULK_RENAME_WIDGET,
+                         CAJA_PREFERENCES_BULK_RENAME_TOOL);
     bind_builder_bool (builder, caja_preferences,
                        CAJA_FILE_MANAGEMENT_PROPERTIES_SHOW_HIDDEN_WIDGET,
                        CAJA_PREFERENCES_SHOW_HIDDEN_FILES);
